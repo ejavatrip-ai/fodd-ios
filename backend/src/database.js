@@ -11,6 +11,30 @@ export const pool = new Pool({
 
 export async function migrateAndSeed() {
   await pool.query(`
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL CHECK (char_length(name) BETWEEN 2 AND 80),
+      username TEXT NOT NULL UNIQUE CHECK (username ~ '^[a-z0-9_]{3,30}$'),
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS follows (
+      follower_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      following_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (follower_id,following_id),
+      CHECK (follower_id <> following_id)
+    );
     CREATE TABLE IF NOT EXISTS restaurants (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -30,6 +54,17 @@ export async function migrateAndSeed() {
       likes INTEGER NOT NULL DEFAULT 0 CHECK (likes >= 0),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE moments ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+    CREATE TABLE IF NOT EXISTS messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL CHECK (char_length(body) BETWEEN 1 AND 1000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (sender_id <> receiver_id)
+    );
+    CREATE INDEX IF NOT EXISTS moments_user_created_idx ON moments(user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS messages_participants_idx ON messages(sender_id,receiver_id,created_at);
   `);
 
   const values = [
