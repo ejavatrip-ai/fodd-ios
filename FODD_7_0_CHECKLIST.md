@@ -1,0 +1,28 @@
+# Fodd 7.0 Build 13 — Release Checklist
+
+- [x] Marketing Version 7.0 / Build 13
+- [x] Widget Extension target
+- [x] Small/Medium Fodd Widget
+- [x] App Group shared snapshot
+- [x] Live Activity attributes/state
+- [x] Dynamic Island layouts
+- [x] Live Activity APNs token registration
+- [x] Backend remote content-state update
+- [x] End Live Activity on completed/cancelled
+- [x] App Intents + App Shortcuts
+- [x] Spotlight indexing + deep links
+- [x] SharePlay Group Activity
+- [x] MapKit Look Around
+- [x] Apple Experience settings
+- [x] Privacy Manifest main app/widget
+- [x] Backend additive migration
+- [x] Backend 7.0.0
+- [x] Swift parse
+- [x] APIClient typecheck (Linux compatibility shim)
+- [x] Node syntax
+- [x] Automated backend tests
+- [x] plist/entitlements/pbxproj validation
+- [ ] Full Xcode compile/link/sign on Mac
+- [ ] TestFlight/iPhone end-to-end QA
+- [ ] Apple Developer capability/provisioning verification
+- [ ] App Store Connect privacy/metadata completion

@@ -1,72 +1,75 @@
-# Fodd 2.0 — iOS Social Food App
+# Fodd 7.0 — Apple Experience — Build 13
 
-Aplikasi sosial dan penemuan kuliner berbasis akun nyata dengan backend Railway dan PostgreSQL.
+Fodd adalah **Premium Social Food Diary** untuk iPhone. Versi 7.0 mempertahankan seluruh fitur 6.5 Creator & Restaurant, 6.4 Together, 6.3 Smart Food, 6.2 Complete & Safe, 6.1 Alive UI, serta pengalaman social diary ala Path, kemudian menambahkan integrasi Apple-native untuk membuat Fodd terasa sebagai aplikasi iOS profesional.
 
-## Struktur repository
+## Baru di Fodd 7.0
 
-```text
-Fodd.xcodeproj/     Proyek Xcode
-Fodd/               Source dan aset aplikasi SwiftUI
-backend/            REST API Node.js + PostgreSQL untuk Railway
-```
+### Widget + Shared App Group
+- Target `FoddWidget` terpisah di project Xcode.
+- Small/Medium Home Screen Widget menampilkan Taste DNA, rekomendasi For You, Match Score, dan rencana Makan Bareng berikutnya.
+- App Group: `group.com.fodd.app` untuk snapshot widget dan pending deep-link route.
 
-## Menjalankan
+### Live Activity & Dynamic Island
+- Dining Plan dapat diaktifkan sebagai Live Activity.
+- Menampilkan status plan, restoran terpilih/kandidat terbaik, jumlah peserta Going, jumlah chat, dan waktu acara.
+- Dynamic Island memiliki compact/minimal/expanded presentation.
+- Push token Live Activity didaftarkan ke backend hanya untuk participant yang terautentikasi.
+- Backend APNs dapat memperbarui Live Activity ketika RSVP, kandidat, vote, restoran final, pesan grup, atau status plan berubah.
+- Plan completed/cancelled mengakhiri Live Activity.
 
-1. Buka `Fodd.xcodeproj` dengan Xcode 16 atau yang lebih baru.
-2. Pilih simulator iPhone 16 (atau iPhone lain dengan iOS 17+).
-3. Tekan **Run** (`⌘R`).
+### Siri, App Shortcuts & Spotlight
+- App Intents untuk membuka Explore, Food Diary, dan Together.
+- App Shortcuts dapat muncul di Siri/Shortcuts tanpa konfigurasi manual dari user.
+- Core Spotlight mengindeks restoran, Food Moment, foodie terkait, dan Dining Plan.
+- Semua hasil kembali ke Fodd melalui deep links `fodd://`.
 
-Gambar demo tersimpan lokal. Data restoran diambil dari Railway dan otomatis kembali ke data lokal jika koneksi gagal.
+### SharePlay
+- Dining Plan dapat dimulai sebagai Group Activity.
+- SharePlay menggunakan metadata plan/restoran agar koordinasi Makan Bareng dapat dibawa ke pengalaman FaceTime/SharePlay.
 
-## Publikasi ke GitHub
+### Apple Maps Look Around
+- Detail restoran meminta `MKLookAroundScene` berdasarkan koordinat.
+- Preview hanya muncul bila Apple menyediakan Look Around di lokasi tersebut.
+- User dapat membuka full Look Around viewer dari halaman restoran.
 
-Repository menggunakan branch utama `main`. Setelah membuat repository kosong bernama `fodd-ios` di GitHub:
+### Apple Experience Settings
+Profile → Settings → **Apple Experience** menampilkan status dan penjelasan Widget, Siri/Shortcuts, Spotlight, Live Activity, SharePlay, serta Look Around.
 
-```bash
-git remote add origin https://github.com/USERNAME/fodd-ios.git
-git push -u origin main
-```
+### App Store Readiness
+- `PrivacyInfo.xcprivacy` untuk main app dan Widget Extension.
+- Required-reason UserDefaults menggunakan `CA92.1` (main-app local preferences) dan `1C8F.1` (App Group sharing).
+- Tidak ada production secret yang dibundel dalam source.
 
-GitHub digunakan sebagai penyimpanan dan riwayat kode. Build aplikasi dilakukan langsung melalui Xcode di Mac, sedangkan Railway mengambil source backend dari folder `/backend`.
+## Versi
+Marketing Version: **7.0**  
+Build: **13**  
+Backend: **7.0.0**
 
-## Men-deploy backend dari GitHub ke Railway
+## Sebelum Build di Xcode
+1. Buka `Fodd.xcodeproj`.
+2. Pilih Apple Developer Team untuk target `Fodd` dan `FoddWidget`.
+3. Daftarkan App Group `group.com.fodd.app` pada App ID main + widget.
+4. Aktifkan Push Notifications untuk main app.
+5. Aktifkan Group Activities/SharePlay untuk main app bila provisioning profile memerlukannya.
+6. Pastikan bundle identifier target sesuai App ID Anda; ubah `com.fodd.app` / `com.fodd.app.widget` bila perlu, lalu sesuaikan `APNS_BUNDLE_ID` di Railway.
+7. Build di iPhone asli untuk APNs, Live Activity/Dynamic Island, widget, SharePlay, Siri, Spotlight, Maps/Look Around, haptic, audio, Keychain, dan Photos.
 
-1. Buat **New Project** di Railway.
-2. Tambahkan layanan **PostgreSQL**.
-3. Pilih **Deploy from GitHub repo**, lalu pilih repository `fodd-ios`.
-4. Pada pengaturan service, isi **Root Directory** dengan `/backend`.
-5. Pastikan variabel `DATABASE_URL` pada layanan backend mengarah ke PostgreSQL Railway.
-6. Tambahkan `NODE_ENV=production` dan `ALLOWED_ORIGIN=*`.
-7. Deploy, lalu pada **Settings → Networking** pilih **Generate Domain**.
-8. Buka `https://DOMAIN-ANDA/health`. Hasil yang benar adalah JSON dengan `status: ok`.
-9. Di Xcode buka target **Fodd → Build Settings → User-Defined → API_BASE_URL**, lalu masukkan domain Railway dengan `/` di bagian akhir.
-10. Jalankan aplikasi. Halaman Explore akan menampilkan status **Data online dari Railway**.
+## Deploy Backend 7.0
+Deploy folder `/backend` **sebelum mengaktifkan remote Live Activity**. Migration tetap additive/non-destructive dan menambahkan `live_activity_tokens`.
 
-Jika sewaktu-waktu ingin memakai Railway CLI dari folder `backend`:
+Environment utama:
+- `DATABASE_URL`
+- `PORT`
+- `NODE_ENV=production`
+- `ALLOWED_ORIGIN`
+- `ADMIN_TOKEN`
+- `APNS_KEY_ID`
+- `APNS_TEAM_ID`
+- `APNS_PRIVATE_KEY`
+- `APNS_BUNDLE_ID` (default source: `com.fodd.app`)
+- `APNS_ENVIRONMENT=production` untuk TestFlight/App Store; gunakan sandbox saat development sesuai setup Anda.
 
-```bash
-railway login
-railway init --name fodd-api
-railway up
-railway domain
-```
+## Catatan Privacy
+Privacy Manifest di project menangani *required-reason API declaration*. Anda tetap harus mengisi **App Privacy** di App Store Connect sesuai data nyata yang Fodd kumpulkan dan kirim ke backend (mis. account/contact info, user content, location bila digunakan, identifiers, dan usage data sesuai implementasi/deployment Anda).
 
-PostgreSQL tetap perlu ditambahkan ke project dan `DATABASE_URL` perlu tersedia sebelum service sehat.
-
-## Fitur versi ini
-
-- Registrasi, login, logout, dan sesi akun 30 hari.
-- Profil member nyata yang dapat diedit.
-- Direktori member, pencarian, follow, dan unfollow.
-- Percakapan antar-member tersimpan di PostgreSQL.
-- Feed hanya menampilkan momen member yang benar-benar terdaftar.
-- Composer momen responsif dan terbaca pada light/dark mode.
-- Explore restoran dan detail restoran responsif.
-- Form tambah momen yang tersimpan ke profil member di PostgreSQL.
-- Endpoint health check dan REST API Railway.
-- Mode offline otomatis ketika backend tidak dapat dijangkau.
-- App icon dan aset food photography orisinal.
-
-## Tahap berikutnya untuk produksi
-
-Tambahkan authentication, object storage untuk upload foto, Maps/Location, push notification, chat real-time, moderation, analytics, serta konfigurasi App Store signing.
+Dokumen tambahan: `RELEASE_NOTES_7.0.md`, `FODD_7_0_CHECKLIST.md`, `APPLE_EXPERIENCE_ARCHITECTURE.md`, `APP_STORE_READINESS_7.0.md`, `VALIDATION_REPORT_7.0.md`.

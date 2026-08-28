@@ -1,0 +1,32 @@
+# Fodd 6.0 Final Checklist
+
+- [x] UI/UX premium menggunakan palette logo Fodd orange-red-white
+- [x] Home Food Moments dengan Following / For You
+- [x] Food Photo
+- [x] Check In restoran nyata Apple Maps
+- [x] Eating
+- [x] Cooking
+- [x] Craving
+- [x] Thought
+- [x] Tag foodies
+- [x] Audience Everyone
+- [x] Audience Friends (mutual follow)
+- [x] Close Foodies
+- [x] Selected Friends
+- [x] Only Me
+- [x] Backend privacy filter
+- [x] Reaksi Love / Yummy / Fire / Wow
+- [x] Comments
+- [x] Food Diary timeline di profile
+- [x] Explore premium + MapKit
+- [x] Restaurant detail / call / directions / website
+- [x] Reviews + photos
+- [x] Universal search
+- [x] Dedicated Inbox tab + unread badges
+- [x] Notifications
+- [x] Register / login / forgot password / change password
+- [x] Email verification
+- [x] Delete account
+- [x] APNs device registration
+- [x] PostgreSQL migration v6 additive
+- [x] Xcode Marketing Version 6.0 / build 6
