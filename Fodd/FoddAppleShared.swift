@@ -3,6 +3,14 @@ import Foundation
 import ActivityKit
 #endif
 
+enum FoddBuildMode {
+    #if FODD_PERSONAL_TEAM
+    static let personalTeam = true
+    #else
+    static let personalTeam = false
+    #endif
+}
+
 struct FoddWidgetSnapshot: Codable, Hashable {
     var displayName: String
     var tasteHeadline: String
@@ -37,7 +45,11 @@ enum FoddSharedContainer {
     static let pendingRouteKey = "fodd.pending.route.v7"
 
     static var defaults: UserDefaults {
-        UserDefaults(suiteName: suiteName) ?? .standard
+        #if FODD_PERSONAL_TEAM
+        return .standard
+        #else
+        return UserDefaults(suiteName: suiteName) ?? .standard
+        #endif
     }
 
     static func saveWidgetSnapshot(_ snapshot: FoddWidgetSnapshot) {

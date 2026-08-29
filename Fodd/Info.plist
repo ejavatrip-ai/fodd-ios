@@ -46,7 +46,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.fodd.app.deeplink</string>
+			<string>com.meruartama.fodd.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>fodd</string>
@@ -54,7 +54,7 @@
 		</dict>
 	</array>
 	<key>NSSupportsLiveActivities</key>
-	<true/>
+	<false/>
 	<key>NSAppIconActionTintColorName</key>
 	<string>AccentColor</string>
 	<key>NSAppIconComplementingColorNames</key>

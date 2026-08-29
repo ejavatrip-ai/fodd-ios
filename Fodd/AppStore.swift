@@ -471,8 +471,12 @@ final class AppStore: ObservableObject {
     }
 
     func syncPushToken() async {
+        #if FODD_PERSONAL_TEAM
+        return
+        #else
         guard let token,let deviceToken=UserDefaults.standard.string(forKey:"fodd.deviceToken"),!deviceToken.isEmpty else{return}
         do{try await api.registerDevice(deviceToken:deviceToken,token:token)}catch{ }
+        #endif
     }
 
     func logoutFromServer() async {

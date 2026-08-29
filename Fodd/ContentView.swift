@@ -137,7 +137,7 @@ struct AuthView: View {
                     }
                     .font(.subheadline.weight(.semibold)).foregroundStyle(foddRed)
 
-                    Text("Fodd 7.0 • Apple Experience").font(.caption2).foregroundStyle(.tertiary)
+                    Text(FoddBuildMode.personalTeam ? "Fodd 7.0 • Personal Team Edition" : "Fodd 7.0 • Apple Experience").font(.caption2).foregroundStyle(.tertiary)
                 }
                 .padding(26).frame(maxWidth: 520)
             }
@@ -1796,12 +1796,16 @@ struct MyProfileView: View {
                         SettingsButton(title: "Close Foodies", icon: "star.fill", action: { closeFoodies = true })
                         SettingsButton(title: "Ubah Password", icon: "key.fill", action: { changePassword = true })
                         SettingsButton(title: "Sound & Haptics", icon: "waveform.and.speaker.fill", action: { interactionSettings = true })
-                        SettingsButton(title: "Aktifkan Notifikasi iPhone", icon: "bell.badge.fill", action: { PushNotificationManager.shared.requestAuthorizationAndRegister() })
+                        if FoddBuildMode.personalTeam {
+                            SettingsButton(title: "Push Remote • perlu Apple Developer", icon: "bell.slash.fill", action: { })
+                        } else {
+                            SettingsButton(title: "Aktifkan Notifikasi iPhone", icon: "bell.badge.fill", action: { PushNotificationManager.shared.requestAuthorizationAndRegister() })
+                        }
                     }
 
                     Button("Keluar", role: .destructive) { Task { await store.logoutFromServer() } }.buttonStyle(.bordered)
                     Button("Hapus Akun", role: .destructive) { deleteAccount = true }.font(.footnote)
-                    Text("Fodd 7.0 • Apple Experience").font(.caption2).foregroundStyle(.tertiary).padding(.top, 4)
+                    Text(FoddBuildMode.personalTeam ? "Fodd 7.0 • Personal Team Edition" : "Fodd 7.0 • Apple Experience").font(.caption2).foregroundStyle(.tertiary).padding(.top, 4)
                 }
                 .padding(18).frame(maxWidth: 620)
             }
@@ -2093,7 +2097,11 @@ struct NotificationControlsView: View {
                     Text("Pengaturan ini hanya mengontrol push notification. Aktivitas tetap tersimpan di tab Notifications agar tidak ada informasi penting yang hilang.").font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
-                    Button { PushNotificationManager.shared.requestAuthorizationAndRegister() } label:{ Label("Buka izin notifikasi iPhone",systemImage:"bell.badge.fill") }
+                    if FoddBuildMode.personalTeam {
+                        Label("Remote push dinonaktifkan pada Personal Team Edition", systemImage:"info.circle.fill").font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Button { PushNotificationManager.shared.requestAuthorizationAndRegister() } label:{ Label("Buka izin notifikasi iPhone",systemImage:"bell.badge.fill") }
+                    }
                 }
             }
             .tint(foddOrange).navigationTitle("Notification Controls").navigationBarTitleDisplayMode(.inline)
@@ -2776,9 +2784,14 @@ struct DiningPlanDetailView: View {
             HStack{Button{chat=true}label:{Label("Group Chat (\(plan.messageCount))",systemImage:"message.fill").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(foddOrange);Button{album=true}label:{Label("Album (\(plan.photoCount))",systemImage:"photo.on.rectangle.angled").frame(maxWidth:.infinity)}.buttonStyle(.bordered)}
             Button{groupMoment=true}label:{Label("Bagikan Group Food Moment",systemImage:"sparkles.rectangle.stack.fill").frame(maxWidth:.infinity)}.buttonStyle(.bordered)
             VStack(spacing:10) {
-                HStack {
-                    Button { Task { let ok=await store.startDiningLiveActivity(plan); appleMessage = ok ? "Live Activity aktif di Lock Screen / Dynamic Island." : "Live Activity tidak tersedia atau dinonaktifkan." } } label: { Label("Live Activity",systemImage:"dynamic.island").frame(maxWidth:.infinity) }.buttonStyle(.bordered)
-                    Button { Task { let ok=await FoddSharePlay.start(plan:plan); appleMessage = ok ? "SharePlay dimulai." : "SharePlay membutuhkan FaceTime/Messages yang aktif atau izin pengguna." } } label: { Label("SharePlay",systemImage:"shareplay").frame(maxWidth:.infinity) }.buttonStyle(.bordered)
+                if FoddBuildMode.personalTeam {
+                    Label("Live Activity & SharePlay tersedia saat memakai Apple Developer Program.", systemImage:"info.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+                } else {
+                    HStack {
+                        Button { Task { let ok=await store.startDiningLiveActivity(plan); appleMessage = ok ? "Live Activity aktif di Lock Screen / Dynamic Island." : "Live Activity tidak tersedia atau dinonaktifkan." } } label: { Label("Live Activity",systemImage:"dynamic.island").frame(maxWidth:.infinity) }.buttonStyle(.bordered)
+                        Button { Task { let ok=await FoddSharePlay.start(plan:plan); appleMessage = ok ? "SharePlay dimulai." : "SharePlay membutuhkan FaceTime/Messages yang aktif atau izin pengguna." } } label: { Label("SharePlay",systemImage:"shareplay").frame(maxWidth:.infinity) }.buttonStyle(.bordered)
+                    }
                 }
                 if !appleMessage.isEmpty { Text(appleMessage).font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading) }
             }

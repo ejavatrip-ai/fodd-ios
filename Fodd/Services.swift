@@ -54,7 +54,12 @@ final class PushNotificationManager: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options:[.alert,.badge,.sound]) { granted,_ in
             Task { @MainActor in
                 self.refreshStatus()
+                #if FODD_PERSONAL_TEAM
+                // Personal Team does not support the Push Notifications entitlement.
+                _ = granted
+                #else
                 if granted { UIApplication.shared.registerForRemoteNotifications() }
+                #endif
             }
         }
     }

@@ -95,6 +95,9 @@ final class FoddAppleExperienceManager: ObservableObject {
 
     #if canImport(ActivityKit)
     func startLiveActivity(for plan: DiningPlan, onPushToken: ((String) async -> Void)? = nil) async -> Bool {
+        #if FODD_PERSONAL_TEAM
+        return false
+        #else
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
         let scheduled = Self.date(plan.scheduledAt) ?? Date().addingTimeInterval(3600)
         let attributes = FoddDiningActivityAttributes(planId: plan.id, title: plan.title, hostName: plan.host.name)
@@ -121,6 +124,7 @@ final class FoddAppleExperienceManager: ObservableObject {
             }
             return true
         } catch { return false }
+        #endif
     }
 
     func refreshLiveActivity(for plan: DiningPlan) async {
@@ -177,6 +181,9 @@ struct FoddTogetherShareActivity: GroupActivity, Codable {
 
 enum FoddSharePlay {
     static func start(plan: DiningPlan) async -> Bool {
+        #if FODD_PERSONAL_TEAM
+        return false
+        #else
         let activity = FoddTogetherShareActivity(planId: plan.id, title: plan.title, restaurantName: plan.selectedRestaurant?.name ?? "")
         switch await activity.prepareForActivation() {
         case .activationPreferred:
@@ -186,6 +193,7 @@ enum FoddSharePlay {
         @unknown default:
             return false
         }
+        #endif
     }
 }
 #else
@@ -230,6 +238,12 @@ struct AppleExperienceSettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if FoddBuildMode.personalTeam {
+                    Section("Personal Team Mode") {
+                        Label("Siap dipasang dengan Apple Personal Team", systemImage: "checkmark.shield.fill")
+                        Text("Push remote, SharePlay, App Group Widget, dan Dynamic Island remote dinonaktifkan pada build ini. Semua source fitur 7.0 tetap disimpan.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section {
                     Label("Widget: Taste DNA, rekomendasi, Makan Bareng", systemImage: "rectangle.grid.2x2.fill")
                     Label("Siri & Shortcuts: Explore, Diary, Together", systemImage: "mic.badge.plus")
