@@ -81,7 +81,7 @@ final class FoddAppleExperienceManager: ObservableObject {
             items.append(CSSearchableItem(uniqueIdentifier: "member-\(member.id)", domainIdentifier: "com.fodd.member", attributeSet: attributes))
         }
         for plan in diningPlans.filter({ $0.status == "planned" }).prefix(20) {
-            let attributes = CSSearchableItemAttributeSet(contentType: .event)
+            let attributes = CSSearchableItemAttributeSet(contentType: .content)
             attributes.title = plan.title
             let venue = plan.selectedRestaurant?.name ?? plan.candidates.first?.restaurant.name ?? "Pilih restoran"
             attributes.contentDescription = "Makan Bareng • \(venue)"
@@ -241,7 +241,7 @@ struct AppleExperienceSettingsView: View {
                 if FoddBuildMode.personalTeam {
                     Section("Personal Team Mode") {
                         Label("Siap dipasang dengan Apple Personal Team", systemImage: "checkmark.shield.fill")
-                        Text("Push remote, SharePlay, App Group Widget, dan Dynamic Island remote dinonaktifkan pada build ini. Semua source fitur 7.0 tetap disimpan.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Push remote, SharePlay, App Group Widget, dan Dynamic Island remote dinonaktifkan pada build ini. Semua source fitur Apple Experience tetap disimpan.").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 Section {

@@ -127,6 +127,54 @@ struct Moment: Identifiable, Codable, Hashable {
     }
 }
 
+struct FoodStory: Identifiable, Codable, Hashable {
+    let id, mediaType, media, caption, locationName, locationAddress, createdAt, expiresAt, userId, name, username, avatar: String
+    let creatorVerified: Bool
+    let latitude, longitude: Double?
+    let visibility: MomentVisibility
+    let taggedNames: [String]
+    var viewCount: Int
+    var seenByMe: Bool
+    var reactions: [String:Int]
+    var myReaction: String?
+    let pollQuestion, pollOptionA, pollOptionB: String
+    var pollVotes: [String:Int]
+    var myPollVote: String?
+
+    enum CodingKeys:String,CodingKey { case id,mediaType,media,caption,locationName,locationAddress,createdAt,expiresAt,userId,name,username,avatar,creatorVerified,latitude,longitude,visibility,taggedNames,viewCount,seenByMe,reactions,myReaction,pollQuestion,pollOptionA,pollOptionB,pollVotes,myPollVote }
+    init(from decoder:Decoder) throws {
+        let c=try decoder.container(keyedBy:CodingKeys.self)
+        id=try c.decode(String.self,forKey:.id); mediaType=try c.decodeIfPresent(String.self,forKey:.mediaType) ?? "photo"; media=try c.decodeIfPresent(String.self,forKey:.media) ?? ""; caption=try c.decodeIfPresent(String.self,forKey:.caption) ?? ""
+        locationName=try c.decodeIfPresent(String.self,forKey:.locationName) ?? ""; locationAddress=try c.decodeIfPresent(String.self,forKey:.locationAddress) ?? ""; createdAt=try c.decode(String.self,forKey:.createdAt); expiresAt=try c.decode(String.self,forKey:.expiresAt)
+        userId=try c.decode(String.self,forKey:.userId); name=try c.decode(String.self,forKey:.name); username=try c.decode(String.self,forKey:.username); avatar=try c.decodeIfPresent(String.self,forKey:.avatar) ?? ""; creatorVerified=try c.decodeIfPresent(Bool.self,forKey:.creatorVerified) ?? false
+        latitude=try c.decodeIfPresent(Double.self,forKey:.latitude); longitude=try c.decodeIfPresent(Double.self,forKey:.longitude); visibility=try c.decodeIfPresent(MomentVisibility.self,forKey:.visibility) ?? .everyone; taggedNames=try c.decodeIfPresent([String].self,forKey:.taggedNames) ?? []
+        viewCount=try c.decodeIfPresent(Int.self,forKey:.viewCount) ?? 0; seenByMe=try c.decodeIfPresent(Bool.self,forKey:.seenByMe) ?? false; reactions=try c.decodeIfPresent([String:Int].self,forKey:.reactions) ?? [:]; myReaction=try c.decodeIfPresent(String.self,forKey:.myReaction)
+        pollQuestion=try c.decodeIfPresent(String.self,forKey:.pollQuestion) ?? ""; pollOptionA=try c.decodeIfPresent(String.self,forKey:.pollOptionA) ?? ""; pollOptionB=try c.decodeIfPresent(String.self,forKey:.pollOptionB) ?? ""; pollVotes=try c.decodeIfPresent([String:Int].self,forKey:.pollVotes) ?? ["a":0,"b":0]; myPollVote=try c.decodeIfPresent(String.self,forKey:.myPollVote)
+    }
+}
+
+struct StoryHighlight: Identifiable, Codable, Hashable {
+    let id, title, createdAt, cover: String
+    let storyCount: Int
+}
+
+struct TasteMatch: Codable, Hashable {
+    let score: Int
+    let label: String
+    let commonCategories: [String]
+    let commonMoods: [String]
+}
+
+struct StoryPollVoteResponse: Codable, Hashable {
+    let pollVotes: [String:Int]
+    let myPollVote: String
+}
+
+struct StoryViewer: Identifiable, Codable, Hashable {
+    let id, name, username, avatar, viewedAt: String
+    let reaction: String?
+}
+
 struct MomentComment: Identifiable, Codable, Hashable {
     let id, body, createdAt, userId, name, username, avatar: String
 }
@@ -596,6 +644,29 @@ struct APIClient {
         let _:EmptyResponse=try await request("api/notifications/read",method:"POST",token:token)
     }
     func unreadSummary(token:String) async throws -> UnreadSummary { try await request("api/unread",token:token) }
+
+    func stories(token:String) async throws -> [FoodStory] { try await request("api/stories",token:token) }
+    func storyArchive(token:String) async throws -> [FoodStory] { try await request("api/stories/archive",token:token) }
+    func createStory(media:String,caption:String,locationName:String,locationAddress:String,latitude:Double?,longitude:Double?,visibility:MomentVisibility,taggedUserIds:[String],selectedUserIds:[String],pollQuestion:String="",pollOptionA:String="",pollOptionB:String="",token:String) async throws -> FoodStory {
+        var body:[String:Any] = ["media":media,"caption":caption,"locationName":locationName,"locationAddress":locationAddress,"visibility":visibility.rawValue,"taggedUserIds":taggedUserIds,"selectedUserIds":selectedUserIds,"pollQuestion":pollQuestion,"pollOptionA":pollOptionA,"pollOptionB":pollOptionB]
+        if let latitude { body["latitude"]=latitude }; if let longitude { body["longitude"]=longitude }
+        return try await request("api/stories",method:"POST",token:token,body:body)
+    }
+    func markStoryViewed(id:String,token:String) async throws { let _:EmptyResponse=try await request("api/stories/\(id)/view",method:"PUT",token:token) }
+    func reactStory(id:String,reaction:MomentReaction?,token:String) async throws {
+        if let reaction { let _:EmptyResponse=try await request("api/stories/\(id)/reaction",method:"PUT",token:token,body:["reaction":reaction.rawValue]) }
+        else { let _:EmptyResponse=try await request("api/stories/\(id)/reaction",method:"DELETE",token:token) }
+    }
+    func storyViewers(id:String,token:String) async throws -> [StoryViewer] { try await request("api/stories/\(id)/viewers",token:token) }
+    func replyStory(id:String,body:String,token:String) async throws -> ChatMessage { try await request("api/stories/\(id)/reply",method:"POST",token:token,body:["body":body]) }
+    func voteStoryPoll(id:String,option:String,token:String) async throws -> StoryPollVoteResponse { try await request("api/stories/\(id)/poll",method:"PUT",token:token,body:["option":option]) }
+    func highlights(userId:String,token:String) async throws -> [StoryHighlight] { try await request("api/highlights/user/\(userId)",token:token) }
+    func highlightStories(id:String,token:String) async throws -> [FoodStory] { try await request("api/highlights/\(id)/stories",token:token) }
+    func createHighlight(title:String,token:String) async throws -> StoryHighlight { try await request("api/highlights",method:"POST",token:token,body:["title":title]) }
+    func addStoryToHighlight(highlightId:String,storyId:String,token:String) async throws { let _:EmptyResponse=try await request("api/highlights/\(highlightId)/stories",method:"POST",token:token,body:["storyId":storyId]) }
+    func deleteHighlight(id:String,token:String) async throws { let _:EmptyResponse=try await request("api/highlights/\(id)",method:"DELETE",token:token) }
+    func tasteMatch(userId:String,token:String) async throws -> TasteMatch { try await request("api/smart/taste-match/\(userId)",token:token) }
+    func deleteStory(id:String,token:String) async throws { let _:EmptyResponse=try await request("api/stories/\(id)",method:"DELETE",token:token) }
 
     func moments(token: String) async throws -> [Moment] { try await request("api/moments",token:token) }
     func createMoment(caption:String,image:String,type:MomentType,locationName:String,locationAddress:String,latitude:Double?,longitude:Double?,visibility:MomentVisibility,taggedUserIds:[String],selectedUserIds:[String],token:String) async throws -> Moment {

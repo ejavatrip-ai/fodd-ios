@@ -286,6 +286,71 @@ export async function migrateAndSeed() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS stories (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      media_type TEXT NOT NULL DEFAULT 'photo' CHECK (media_type IN ('photo','text')),
+      media TEXT NOT NULL DEFAULT '',
+      caption TEXT NOT NULL DEFAULT '' CHECK (char_length(caption) <= 500),
+      location_name TEXT NOT NULL DEFAULT '',
+      location_address TEXT NOT NULL DEFAULT '',
+      latitude DOUBLE PRECISION,
+      longitude DOUBLE PRECISION,
+      visibility TEXT NOT NULL DEFAULT 'everyone' CHECK (visibility IN ('everyone','friends','close_foodies','selected','only_me')),
+      tagged_user_ids UUID[] NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+    );
+
+    CREATE TABLE IF NOT EXISTS story_audience (
+      story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (story_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS story_views (
+      story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (story_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS story_reactions (
+      story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reaction TEXT NOT NULL CHECK (reaction IN ('love','yummy','fire','wow')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (story_id,user_id)
+    );
+
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS poll_question TEXT NOT NULL DEFAULT '';
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS poll_option_a TEXT NOT NULL DEFAULT '';
+    ALTER TABLE stories ADD COLUMN IF NOT EXISTS poll_option_b TEXT NOT NULL DEFAULT '';
+
+    CREATE TABLE IF NOT EXISTS story_poll_votes (
+      story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      option_key TEXT NOT NULL CHECK (option_key IN ('a','b')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (story_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS story_highlights (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL CHECK (char_length(title) BETWEEN 1 AND 40),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS story_highlight_items (
+      highlight_id UUID NOT NULL REFERENCES story_highlights(id) ON DELETE CASCADE,
+      story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (highlight_id,story_id)
+    );
+
     CREATE TABLE IF NOT EXISTS moments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       author TEXT NOT NULL,
@@ -417,6 +482,14 @@ export async function migrateAndSeed() {
     CREATE INDEX IF NOT EXISTS auth_codes_user_idx ON auth_codes(user_id,purpose,created_at DESC);
     CREATE INDEX IF NOT EXISTS place_reviews_place_idx ON place_reviews(place_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS stories_active_idx ON stories(expires_at DESC,created_at DESC);
+    CREATE INDEX IF NOT EXISTS stories_user_created_idx ON stories(user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS story_audience_user_idx ON story_audience(user_id,story_id);
+    CREATE INDEX IF NOT EXISTS story_views_story_idx ON story_views(story_id,viewed_at DESC);
+    CREATE INDEX IF NOT EXISTS story_reactions_story_idx ON story_reactions(story_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS story_poll_votes_story_idx ON story_poll_votes(story_id,option_key);
+    CREATE INDEX IF NOT EXISTS story_highlights_user_idx ON story_highlights(user_id,updated_at DESC);
+    CREATE INDEX IF NOT EXISTS story_highlight_items_idx ON story_highlight_items(highlight_id,sort_order,created_at);
     CREATE INDEX IF NOT EXISTS moments_user_created_idx ON moments(user_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS close_foodies_user_idx ON close_foodies(user_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS moment_audience_user_idx ON moment_audience(user_id,moment_id);

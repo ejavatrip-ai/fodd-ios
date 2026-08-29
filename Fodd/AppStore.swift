@@ -18,6 +18,7 @@ final class AppStore: ObservableObject {
     @Published var restaurantClaims: [RestaurantClaim] = []
     @Published var isSmartFoodLoading = false
     @Published var moments: [Moment] = []
+    @Published var stories: [FoodStory] = []
     @Published var restaurants: [Restaurant] = []
     @Published var conversations: [Conversation] = []
     @Published var notifications: [AppNotification] = []
@@ -103,6 +104,7 @@ final class AppStore: ObservableObject {
     func refreshPrivate() async throws {
         guard let token else{return}
         async let momentRequest=api.moments(token:token)
+        async let storyRequest=api.stories(token:token)
         async let memberRequest=api.members(search:"",token:token)
         async let restaurantRequest=api.restaurants(token:token)
         async let conversationRequest=api.conversations(token:token)
@@ -114,7 +116,8 @@ final class AppStore: ObservableObject {
         async let unreadRequest=api.unreadSummary(token:token)
         async let diningRequest=api.diningPlans(token:token)
         let (newMoments,newMembers,newRestaurants,newConversations,newCloseFoodies,newBlocked,newFollowRequests,newCollections,newSettings,summary,newDiningPlans)=try await (momentRequest,memberRequest,restaurantRequest,conversationRequest,closeFoodiesRequest,blockedRequest,followRequest,collectionRequest,settingsRequest,unreadRequest,diningRequest)
-        moments=newMoments; members=newMembers; restaurants=newRestaurants; conversations=newConversations; closeFoodies=newCloseFoodies; blockedUsers=newBlocked; followRequests=newFollowRequests; collections=newCollections; userSettings=newSettings; diningPlans=newDiningPlans
+        let newStories=try? await storyRequest
+        moments=newMoments; if let newStories { stories=newStories }; members=newMembers; restaurants=newRestaurants; conversations=newConversations; closeFoodies=newCloseFoodies; blockedUsers=newBlocked; followRequests=newFollowRequests; collections=newCollections; userSettings=newSettings; diningPlans=newDiningPlans
         if account?.isPrivate != newSettings.isPrivate { account?.isPrivate = newSettings.isPrivate }
         unreadMessages=summary.messages; unreadNotifications=summary.notifications
         await refreshSmartFood()
@@ -359,15 +362,17 @@ final class AppStore: ObservableObject {
         try? await api.unregisterLiveActivity(planId: plan.id, token: token)
     }
 
-    func refreshDiningPlans() async { guard let token else{return};do{diningPlans=try await api.diningPlans(token:token);FoddAppleExperienceManager.shared.sync(account:account, smartDashboard:smartDashboard, restaurants:restaurants, moments:moments, members:members, diningPlans:diningPlans)}catch{errorMessage=error.localizedDescription} }
-    func diningPlan(_ id:String) async -> DiningPlan? { guard let token else{return nil};do{let plan=try await api.diningPlan(id:id,token:token);if let i=diningPlans.firstIndex(where:{$0.id==id}){diningPlans[i]=plan}else{diningPlans.append(plan)};FoddAppleExperienceManager.shared.sync(account:account, smartDashboard:smartDashboard, restaurants:restaurants, moments:moments, members:members, diningPlans:diningPlans);await FoddAppleExperienceManager.shared.refreshLiveActivity(for:plan);return plan}catch{errorMessage=error.localizedDescription;return nil} }
-    func createDiningPlan(title:String,note:String,date:Date,memberIds:[String],restaurantIds:[String]) async -> DiningPlan? { guard let token else{return nil};do{let f=ISO8601DateFormatter();let plan=try await api.createDiningPlan(title:title,note:note,scheduledAt:f.string(from:date),memberIds:memberIds,candidateRestaurantIds:restaurantIds,token:token);diningPlans.insert(plan,at:0);FoddAppleExperienceManager.shared.sync(account:account, smartDashboard:smartDashboard, restaurants:restaurants, moments:moments, members:members, diningPlans:diningPlans);FoddFeedbackManager.shared.success();return plan}catch{errorMessage=error.localizedDescription;return nil} }
+    func refreshDiningPlans() async { guard let token else{return};do{diningPlans=try await api.diningPlans(token:token);FoddAppleExperienceManager.shared.sync(account:account, smartDashboard:smartDashboard, restaurants:restaurants, moments:moments, members:members, diningPlans:diningPlans);await TogetherReminderManager.shared.sync(plans:diningPlans)}catch{errorMessage=error.localizedDescription} }
+    func diningPlan(_ id:String) async -> DiningPlan? { guard let token else{return nil};do{let plan=try await api.diningPlan(id:id,token:token);if let i=diningPlans.firstIndex(where:{$0.id==id}){diningPlans[i]=plan}else{diningPlans.append(plan)};FoddAppleExperienceManager.shared.sync(account:account, smartDashboard:smartDashboard, restaurants:restaurants, moments:moments, members:members, diningPlans:diningPlans);await FoddAppleExperienceManager.shared.refreshLiveActivity(for:plan);await TogetherReminderManager.shared.schedule(plan:plan);return plan}catch{errorMessage=error.localizedDescription;return nil} }
+    func createDiningPlan(title:String,note:String,date:Date,memberIds:[String],restaurantIds:[String]) async -> DiningPlan? { guard let token else{return nil};do{let f=ISO8601DateFormatter();let plan=try await api.createDiningPlan(title:title,note:note,scheduledAt:f.string(from:date),memberIds:memberIds,candidateRestaurantIds:restaurantIds,token:token);diningPlans.insert(plan,at:0);FoddAppleExperienceManager.shared.sync(account:account, smartDashboard:smartDashboard, restaurants:restaurants, moments:moments, members:members, diningPlans:diningPlans);_ = await TogetherReminderManager.shared.requestAuthorization();await TogetherReminderManager.shared.schedule(plan:plan);FoddFeedbackManager.shared.success();return plan}catch{errorMessage=error.localizedDescription;return nil} }
     func inviteToDiningPlan(_ plan:DiningPlan,memberIds:[String]) async -> Bool { guard let token else{return false};do{try await api.inviteToDiningPlan(id:plan.id,memberIds:memberIds,token:token);_=await diningPlan(plan.id);return true}catch{errorMessage=error.localizedDescription;return false} }
     func diningRSVP(plan:DiningPlan,rsvp:DiningRSVP) async -> Bool { guard let token else{return false};do{_=try await api.diningRSVP(id:plan.id,rsvp:rsvp,token:token);_=await diningPlan(plan.id);FoddFeedbackManager.shared.selection();return true}catch{errorMessage=error.localizedDescription;return false} }
     func vote(plan:DiningPlan,restaurant:Restaurant) async -> Bool { guard let token else{return false};do{try await api.voteDiningPlan(id:plan.id,restaurantId:restaurant.id,token:token);_=await diningPlan(plan.id);FoddFeedbackManager.shared.selection();return true}catch{errorMessage=error.localizedDescription;return false} }
     func addCandidate(plan:DiningPlan,restaurant:Restaurant) async -> Bool { guard let token else{return false};do{try await api.setDiningCandidate(planId:plan.id,restaurantId:restaurant.id,enabled:true,token:token);_=await diningPlan(plan.id);return true}catch{errorMessage=error.localizedDescription;return false} }
-    func chooseRestaurant(plan:DiningPlan,restaurant:Restaurant) async -> Bool { guard let token else{return false};do{let updated=try await api.updateDiningPlan(id:plan.id,selectedRestaurantId:restaurant.id,token:token);if let i=diningPlans.firstIndex(where:{$0.id==plan.id}){diningPlans[i]=updated};FoddFeedbackManager.shared.success();return true}catch{errorMessage=error.localizedDescription;return false} }
-    func completeDiningPlan(_ plan:DiningPlan) async -> Bool { guard let token else{return false};do{let updated=try await api.updateDiningPlan(id:plan.id,status:"completed",token:token);if let i=diningPlans.firstIndex(where:{$0.id==plan.id}){diningPlans[i]=updated};return true}catch{errorMessage=error.localizedDescription;return false} }
+    func chooseRestaurant(plan:DiningPlan,restaurant:Restaurant) async -> Bool { guard let token else{return false};do{let updated=try await api.updateDiningPlan(id:plan.id,selectedRestaurantId:restaurant.id,token:token);if let i=diningPlans.firstIndex(where:{$0.id==plan.id}){diningPlans[i]=updated};await TogetherReminderManager.shared.schedule(plan:updated);FoddFeedbackManager.shared.success();return true}catch{errorMessage=error.localizedDescription;return false} }
+    func completeDiningPlan(_ plan:DiningPlan) async -> Bool { guard let token else{return false};do{let updated=try await api.updateDiningPlan(id:plan.id,status:"completed",token:token);if let i=diningPlans.firstIndex(where:{$0.id==plan.id}){diningPlans[i]=updated};TogetherReminderManager.shared.cancel(planId:plan.id);return true}catch{errorMessage=error.localizedDescription;return false} }
+    func updateDiningPlanSchedule(_ plan:DiningPlan,date:Date,title:String?=nil,note:String?=nil) async -> DiningPlan? { guard let token else{return nil};do{let f=ISO8601DateFormatter();let updated=try await api.updateDiningPlan(id:plan.id,title:title,note:note,scheduledAt:f.string(from:date),token:token);if let i=diningPlans.firstIndex(where:{$0.id==plan.id}){diningPlans[i]=updated};await TogetherReminderManager.shared.schedule(plan:updated);FoddFeedbackManager.shared.success();return updated}catch{errorMessage=error.localizedDescription;return nil} }
+    func cancelDiningPlan(_ plan:DiningPlan) async -> Bool { guard let token else{return false};do{let updated=try await api.updateDiningPlan(id:plan.id,status:"cancelled",token:token);if let i=diningPlans.firstIndex(where:{$0.id==plan.id}){diningPlans[i]=updated};TogetherReminderManager.shared.cancel(planId:plan.id);FoddFeedbackManager.shared.selection();return true}catch{errorMessage=error.localizedDescription;return false} }
     func diningMessages(planId:String) async -> [DiningPlanMessage] { guard let token else{return[]};do{return try await api.diningMessages(id:planId,token:token)}catch{errorMessage=error.localizedDescription;return[]} }
     func sendDiningMessage(planId:String,body:String) async -> DiningPlanMessage? { guard let token else{return nil};do{return try await api.sendDiningMessage(id:planId,body:body,token:token)}catch{errorMessage=error.localizedDescription;return nil} }
     func diningPhotos(planId:String) async -> [DiningPlanPhoto] { guard let token else{return[]};do{return try await api.diningPhotos(id:planId,token:token)}catch{errorMessage=error.localizedDescription;return[]} }
@@ -375,6 +380,67 @@ final class AppStore: ObservableObject {
     func createTogetherMoment(planId:String,caption:String,image:String) async -> Bool { guard let token else{return false};do{_=try await api.createTogetherMoment(planId:planId,caption:caption,image:image,token:token);moments=try await api.moments(token:token);saveCachedState();FoddFeedbackManager.shared.success();return true}catch{errorMessage=error.localizedDescription;return false} }
     func collectionMembers(_ collection:FoodCollection) async -> [SharedCollectionMember] { guard let token else{return[]};do{return try await api.collectionMembers(id:collection.id,token:token)}catch{errorMessage=error.localizedDescription;return[]} }
     func shareCollection(_ collection:FoodCollection,with member:Member,role:String="editor") async -> Bool { guard let token else{return false};do{try await api.shareCollection(id:collection.id,userId:member.id,role:role,token:token);collections=try await api.collections(token:token);return true}catch{errorMessage=error.localizedDescription;return false} }
+
+    func refreshStories() async {
+        guard let token else { return }
+        do { stories = try await api.stories(token: token) }
+        catch { errorMessage = error.localizedDescription }
+    }
+    func createStory(media:String,caption:String,locationName:String,locationAddress:String,latitude:Double?,longitude:Double?,visibility:MomentVisibility,taggedUserIds:[String],selectedUserIds:[String],pollQuestion:String="",pollOptionA:String="",pollOptionB:String="") async -> Bool {
+        guard let token else { return false }
+        do {
+            let story=try await api.createStory(media:media,caption:caption,locationName:locationName,locationAddress:locationAddress,latitude:latitude,longitude:longitude,visibility:visibility,taggedUserIds:taggedUserIds,selectedUserIds:selectedUserIds,pollQuestion:pollQuestion,pollOptionA:pollOptionA,pollOptionB:pollOptionB,token:token)
+            stories.append(story); FoddFeedbackManager.shared.success(); return true
+        } catch { errorMessage=error.localizedDescription; return false }
+    }
+    func markStoryViewed(_ story:FoodStory) async {
+        guard let token, story.userId != account?.id else { return }
+        do {
+            try await api.markStoryViewed(id:story.id,token:token)
+            if let index=stories.firstIndex(where:{$0.id==story.id}) { stories[index].seenByMe=true }
+        } catch { }
+    }
+    func reactStory(_ story:FoodStory,reaction:MomentReaction?) async {
+        guard let token, let index=stories.firstIndex(where:{$0.id==story.id}) else { return }
+        let previous=stories[index].myReaction.flatMap(MomentReaction.init(rawValue:))
+        do {
+            try await api.reactStory(id:story.id,reaction:reaction,token:token)
+            if let previous { stories[index].reactions[previous.rawValue]=max(0,(stories[index].reactions[previous.rawValue] ?? 0)-1) }
+            if let reaction { stories[index].reactions[reaction.rawValue]=(stories[index].reactions[reaction.rawValue] ?? 0)+1 }
+            stories[index].myReaction=reaction?.rawValue; FoddFeedbackManager.shared.reaction()
+        } catch { errorMessage=error.localizedDescription }
+    }
+    func storyViewers(_ story:FoodStory) async -> [StoryViewer] {
+        guard let token else { return [] }
+        do { return try await api.storyViewers(id:story.id,token:token) }
+        catch { errorMessage=error.localizedDescription; return [] }
+    }
+    func replyStory(_ story:FoodStory,body:String) async -> Bool {
+        guard let token else { return false }
+        do { _=try await api.replyStory(id:story.id,body:body,token:token); if let updated=try? await api.conversations(token:token){conversations=updated}; FoddFeedbackManager.shared.messageSent(); return true }
+        catch { errorMessage=error.localizedDescription; return false }
+    }
+    func deleteStory(_ story:FoodStory) async -> Bool {
+        guard let token else { return false }
+        do { try await api.deleteStory(id:story.id,token:token); stories.removeAll{$0.id==story.id}; return true }
+        catch { errorMessage=error.localizedDescription; return false }
+    }
+    func storyArchive() async -> [FoodStory] {
+        guard let token else { return [] }
+        do { return try await api.storyArchive(token:token) }
+        catch { errorMessage=error.localizedDescription; return [] }
+    }
+    func voteStoryPoll(_ story:FoodStory,option:String) async {
+        guard let token, let index=stories.firstIndex(where:{$0.id==story.id}) else { return }
+        do { let result=try await api.voteStoryPoll(id:story.id,option:option,token:token);stories[index].pollVotes=result.pollVotes;stories[index].myPollVote=result.myPollVote;FoddFeedbackManager.shared.selection() }
+        catch { errorMessage=error.localizedDescription }
+    }
+    func highlights(userId:String?=nil) async -> [StoryHighlight] { guard let token,let id=userId ?? account?.id else{return[]};do{return try await api.highlights(userId:id,token:token)}catch{errorMessage=error.localizedDescription;return[]} }
+    func highlightStories(_ highlight:StoryHighlight) async -> [FoodStory] { guard let token else{return[]};do{return try await api.highlightStories(id:highlight.id,token:token)}catch{errorMessage=error.localizedDescription;return[]} }
+    func createHighlight(title:String) async -> StoryHighlight? { guard let token else{return nil};do{let value=try await api.createHighlight(title:title,token:token);FoddFeedbackManager.shared.success();return value}catch{errorMessage=error.localizedDescription;return nil} }
+    func addStory(_ story:FoodStory,to highlight:StoryHighlight) async -> Bool { guard let token else{return false};do{try await api.addStoryToHighlight(highlightId:highlight.id,storyId:story.id,token:token);FoddFeedbackManager.shared.success();return true}catch{errorMessage=error.localizedDescription;return false} }
+    func deleteHighlight(_ highlight:StoryHighlight) async -> Bool { guard let token else{return false};do{try await api.deleteHighlight(id:highlight.id,token:token);return true}catch{errorMessage=error.localizedDescription;return false} }
+    func tasteMatch(with member:Member) async -> TasteMatch? { guard let token else{return nil};do{return try await api.tasteMatch(userId:member.id,token:token)}catch{errorMessage=error.localizedDescription;return nil} }
 
     func createMoment(caption:String,image:String,type:MomentType,locationName:String,locationAddress:String,latitude:Double?,longitude:Double?,visibility:MomentVisibility,taggedUserIds:[String],selectedUserIds:[String]) async -> Bool {
         guard let token else{return false}
@@ -523,7 +589,7 @@ final class AppStore: ObservableObject {
     private func clearCache() { try? FileManager.default.removeItem(at:cacheURL) }
 
     private func clearLocalSession() {
-        token=nil; account=nil; members=[]; closeFoodies=[]; blockedUsers=[]; followRequests=[]; collections=[]; diningPlans=[]; moments=[]; restaurants=[]; conversations=[]; notifications=[]
+        token=nil; account=nil; members=[]; closeFoodies=[]; blockedUsers=[]; followRequests=[]; collections=[]; diningPlans=[]; moments=[]; stories=[]; restaurants=[]; conversations=[]; notifications=[]
         userSettings=FoddUserSettings(isPrivate:false,pushFollows:true,pushLikes:true,pushComments:true,pushMessages:true,pushRecommendations:true,pushTogether:true); tastePreferences=TastePreferences(); smartDashboard=nil; creatorProfile=nil; myRestaurants=[]; restaurantClaims=[]
         unreadMessages=0; unreadNotifications=0; errorMessage=nil; sessionNeedsRetry=false; isOnline=false; clearCache()
     }

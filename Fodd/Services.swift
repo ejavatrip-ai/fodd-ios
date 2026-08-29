@@ -31,7 +31,17 @@ final class FoddAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
 
     func userNotificationCenter(_ center:UNUserNotificationCenter,didReceive response:UNNotificationResponse,withCompletionHandler completionHandler:@escaping ()->Void) {
         let info=response.notification.request.content.userInfo
-        if let planId=info["planId"] as? String, let url=URL(string:"fodd://together/\(planId)") {
+        if response.actionIdentifier == "FODD_OPEN_MAPS",
+           let lat=info["latitude"] as? Double, let lon=info["longitude"] as? Double {
+            let name=(info["restaurantName"] as? String ?? "Tempat Nongkrong").addingPercentEncoding(withAllowedCharacters:.urlQueryAllowed) ?? "Tempat"
+            if let url=URL(string:"http://maps.apple.com/?ll=\(lat),\(lon)&q=\(name)&dirflg=d") {
+                DispatchQueue.main.async { UIApplication.shared.open(url) }
+                completionHandler(); return
+            }
+        }
+        if let deep=info["deepLink"] as? String, let url=URL(string:deep) {
+            DispatchQueue.main.async { UIApplication.shared.open(url) }
+        } else if let planId=info["planId"] as? String, let url=URL(string:"fodd://together/\(planId)") {
             DispatchQueue.main.async { UIApplication.shared.open(url) }
         }
         completionHandler()
@@ -89,12 +99,34 @@ final class LocationManager:NSObject,ObservableObject,CLLocationManagerDelegate 
         }
     }
 
-    func locationManagerDidChangeAuthorization(_ manager:CLLocationManager) {
-        authorizationStatus=manager.authorizationStatus
-        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways { manager.requestLocation() }
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.authorizationStatus = status
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                self.manager.requestLocation()
+            }
+        }
     }
-    func locationManager(_ manager:CLLocationManager,didUpdateLocations locations:[CLLocation]) { coordinate=locations.last?.coordinate; errorMessage=nil }
-    func locationManager(_ manager:CLLocationManager,didFailWithError error:Error) { errorMessage=error.localizedDescription }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        let latitude = locations.last?.coordinate.latitude
+        let longitude = locations.last?.coordinate.longitude
+        Task { @MainActor [weak self] in
+            if let latitude, let longitude {
+                self?.coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            }
+            self?.errorMessage = nil
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = error.localizedDescription
+        Task { @MainActor [weak self] in
+            self?.errorMessage = message
+        }
+    }
 }
 
 struct NearbyRestaurant:Identifiable,Hashable {
@@ -218,5 +250,228 @@ private struct OSMTags:Decodable {
         case openingHours="opening_hours"
         case contactPhone="contact:phone"
         case contactWebsite="contact:website"
+    }
+}
+
+// MARK: - Fodd 7.4 Smart Together Reminders
+
+enum TogetherReminderPreset: String, CaseIterable, Identifiable, Codable {
+    case dayBefore, twoHours, thirtyMinutes
+    var id: String { rawValue }
+    var secondsBefore: TimeInterval {
+        switch self {
+        case .dayBefore: 86_400
+        case .twoHours: 7_200
+        case .thirtyMinutes: 1_800
+        }
+    }
+    var title: String {
+        switch self {
+        case .dayBefore: "H-1"
+        case .twoHours: "2 jam"
+        case .thirtyMinutes: "30 menit"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .dayBefore: "Sehari sebelum nongkrong"
+        case .twoHours: "Waktunya bersiap"
+        case .thirtyMinutes: "Sebentar lagi berangkat"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .dayBefore: "calendar.badge.clock"
+        case .twoHours: "clock.fill"
+        case .thirtyMinutes: "figure.walk"
+        }
+    }
+}
+
+@MainActor
+final class TogetherReminderManager: ObservableObject {
+    static let shared = TogetherReminderManager()
+    @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    @Published private(set) var pendingCount: Int = 0
+
+    private let center = UNUserNotificationCenter.current()
+    private let defaults = UserDefaults.standard
+    private let selectionPrefix = "fodd.together.reminders."
+    private let departurePrefix = "fodd.together.departure."
+    private let notificationPrefix = "fodd.together.local."
+
+    private init() {
+        refreshAuthorizationStatus()
+        registerCategories()
+        refreshPendingCount()
+    }
+
+    func requestAuthorization() async -> Bool {
+        do {
+            let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+            authorizationStatus = granted ? .authorized : .denied
+            return granted
+        } catch {
+            refreshAuthorizationStatus()
+            return false
+        }
+    }
+
+    func refreshAuthorizationStatus() {
+        center.getNotificationSettings { settings in
+            Task { @MainActor in self.authorizationStatus = settings.authorizationStatus }
+        }
+    }
+
+    func selectedPresets(for planId: String) -> Set<TogetherReminderPreset> {
+        guard let raw = defaults.array(forKey: selectionPrefix + planId) as? [String] else {
+            return Set(TogetherReminderPreset.allCases)
+        }
+        return Set(raw.compactMap(TogetherReminderPreset.init(rawValue:)))
+    }
+
+    func setSelectedPresets(_ presets: Set<TogetherReminderPreset>, for plan: DiningPlan) async {
+        defaults.set(presets.map(\.rawValue), forKey: selectionPrefix + plan.id)
+        await schedule(plan: plan, presets: presets)
+    }
+
+    func schedule(plan: DiningPlan, presets: Set<TogetherReminderPreset>? = nil) async {
+        guard plan.status == "planned", let date = parseTogetherISODate(plan.scheduledAt), date > Date() else {
+            cancel(planId: plan.id)
+            return
+        }
+        let chosen = presets ?? selectedPresets(for: plan.id)
+        cancelScheduledRequests(planId: plan.id, keepDeparture: true)
+        guard authorizationStatus == .authorized || authorizationStatus == .provisional else { return }
+
+        for preset in chosen {
+            let fireDate = date.addingTimeInterval(-preset.secondsBefore)
+            guard fireDate > Date().addingTimeInterval(5) else { continue }
+            let content = contentFor(plan: plan, preset: preset)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: fireDate), repeats: false)
+            let request = UNNotificationRequest(identifier: identifier(planId: plan.id, suffix: preset.rawValue), content: content, trigger: trigger)
+            try? await center.add(request)
+        }
+        refreshPendingCount()
+    }
+
+    func scheduleDeparture(plan: DiningPlan, travelTime: TimeInterval, buffer: TimeInterval = 600) async -> Date? {
+        guard let date = parseTogetherISODate(plan.scheduledAt), date > Date(), travelTime > 0 else { return nil }
+        let fireDate = date.addingTimeInterval(-(travelTime + buffer))
+        guard fireDate > Date().addingTimeInterval(10) else { return nil }
+        if authorizationStatus == .notDetermined { _ = await requestAuthorization() }
+        guard authorizationStatus == .authorized || authorizationStatus == .provisional else { return nil }
+        center.removePendingNotificationRequests(withIdentifiers: [identifier(planId: plan.id, suffix: "departure")])
+        let content = UNMutableNotificationContent()
+        content.title = "Waktunya berangkat 🚗"
+        let venue = plan.selectedRestaurant?.name ?? plan.candidates.first?.restaurant.name ?? "tempat nongkrong"
+        content.body = "Perjalanan ke \(venue) sekitar \(max(1, Int(round(travelTime / 60)))) menit. Berangkat sekarang agar tidak terlambat."
+        content.sound = .default
+        content.categoryIdentifier = "FODD_TOGETHER_REMINDER"
+        content.userInfo = togetherUserInfo(plan)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: fireDate), repeats: false)
+        try? await center.add(UNNotificationRequest(identifier: identifier(planId: plan.id, suffix: "departure"), content: content, trigger: trigger))
+        defaults.set(fireDate.timeIntervalSince1970, forKey: departurePrefix + plan.id)
+        refreshPendingCount()
+        return fireDate
+    }
+
+    func departureDate(for planId: String) -> Date? {
+        let value = defaults.double(forKey: departurePrefix + planId)
+        return value > 0 ? Date(timeIntervalSince1970: value) : nil
+    }
+
+    func sync(plans: [DiningPlan]) async {
+        let planned = plans.filter { $0.status == "planned" && (parseTogetherISODate($0.scheduledAt) ?? .distantPast) > Date() }
+            .sorted { $0.scheduledAt < $1.scheduledAt }
+        let activeIds = Set(planned.prefix(18).map(\.id))
+        for plan in plans {
+            if activeIds.contains(plan.id) { await schedule(plan: plan) }
+            else if plan.status != "planned" { cancel(planId: plan.id) }
+        }
+    }
+
+    func cancel(planId: String) {
+        let ids = TogetherReminderPreset.allCases.map { identifier(planId: planId, suffix: $0.rawValue) } + [identifier(planId: planId, suffix: "departure")]
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        defaults.removeObject(forKey: departurePrefix + planId)
+        refreshPendingCount()
+    }
+
+    private func cancelScheduledRequests(planId: String, keepDeparture: Bool) {
+        var ids = TogetherReminderPreset.allCases.map { identifier(planId: planId, suffix: $0.rawValue) }
+        if !keepDeparture { ids.append(identifier(planId: planId, suffix: "departure")) }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    private func contentFor(plan: DiningPlan, preset: TogetherReminderPreset) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        let venue = plan.selectedRestaurant?.name ?? plan.candidates.first?.restaurant.name ?? "tempat pilihan kalian"
+        switch preset {
+        case .dayBefore:
+            content.title = "Besok waktunya nongkrong ☕"
+            content.body = "\(plan.title) • \(venue). Cek rencana dan pastikan RSVP kamu."
+        case .twoHours:
+            content.title = "2 jam lagi 🍽️"
+            content.body = "\(plan.title) sebentar lagi. Siapkan diri dan cek lokasi \(venue)."
+        case .thirtyMinutes:
+            content.title = "30 menit lagi! 🔥"
+            content.body = "\(plan.title) akan dimulai. Tap untuk buka lokasi dan rencana nongkrong."
+        }
+        content.sound = .default
+        content.categoryIdentifier = "FODD_TOGETHER_REMINDER"
+        content.userInfo = togetherUserInfo(plan)
+        return content
+    }
+
+    private func togetherUserInfo(_ plan: DiningPlan) -> [AnyHashable: Any] {
+        var info: [AnyHashable: Any] = ["planId": plan.id, "deepLink": "fodd://together/\(plan.id)"]
+        if let restaurant = plan.selectedRestaurant ?? plan.candidates.first?.restaurant,
+           let lat = restaurant.latitude, let lon = restaurant.longitude {
+            info["latitude"] = lat; info["longitude"] = lon; info["restaurantName"] = restaurant.name
+        }
+        return info
+    }
+
+    private func identifier(planId: String, suffix: String) -> String { notificationPrefix + planId + "." + suffix }
+
+    private func refreshPendingCount() {
+        center.getPendingNotificationRequests { requests in
+            let count = requests.filter { $0.identifier.hasPrefix(self.notificationPrefix) }.count
+            Task { @MainActor in self.pendingCount = count }
+        }
+    }
+
+    private func registerCategories() {
+        let open = UNNotificationAction(identifier: "FODD_OPEN_PLAN", title: "Lihat Rencana", options: [.foreground])
+        let maps = UNNotificationAction(identifier: "FODD_OPEN_MAPS", title: "Buka Maps", options: [.foreground])
+        let category = UNNotificationCategory(identifier: "FODD_TOGETHER_REMINDER", actions: [open, maps], intentIdentifiers: [], options: [])
+        center.setNotificationCategories([category])
+    }
+}
+
+private func parseTogetherISODate(_ raw: String) -> Date? {
+    let fractional = ISO8601DateFormatter(); fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+}
+
+@MainActor
+final class TogetherTravelEstimator: ObservableObject {
+    @Published var isLoading = false
+    @Published var travelTime: TimeInterval?
+    @Published var errorMessage: String?
+
+    func calculate(from source: CLLocationCoordinate2D, to restaurant: Restaurant) async {
+        guard let lat = restaurant.latitude, let lon = restaurant.longitude else { errorMessage = "Lokasi restoran belum tersedia."; return }
+        isLoading = true; errorMessage = nil; defer { isLoading = false }
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon)))
+        request.transportType = .automobile
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            travelTime = response.routes.first?.expectedTravelTime
+            if travelTime == nil { errorMessage = "Estimasi perjalanan belum tersedia." }
+        } catch { errorMessage = error.localizedDescription }
     }
 }
