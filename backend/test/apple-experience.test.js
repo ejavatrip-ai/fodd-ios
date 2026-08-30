@@ -10,7 +10,7 @@ test("Apple Experience Live Activity endpoints tersedia",async()=>{
   const source=await readFile(serverURL,"utf8");
   assert.ok(source.includes('/api/together/plans/:id/live-activity'));
   assert.match(source,/broadcastDiningLiveActivity/);
-  assert.match(source,/version:"7\.5"/);
+  assert.match(source,/version:"8\.0"/);
 });
 
 test("Live Activity migration additive dan setelah dining_plans",async()=>{

@@ -286,6 +286,98 @@ export async function migrateAndSeed() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+
+    -- Fodd 8.0 — Complete Hangout Experience
+    CREATE TABLE IF NOT EXISTS hangout_preferences (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      availability_status TEXT NOT NULL DEFAULT 'offline' CHECK (availability_status IN ('offline','free_now','coffee','lunch','dinner','weekend')),
+      availability_note TEXT NOT NULL DEFAULT '' CHECK (char_length(availability_note) <= 120),
+      availability_expires_at TIMESTAMPTZ,
+      invite_policy TEXT NOT NULL DEFAULT 'friends' CHECK (invite_policy IN ('everyone','friends','close_foodies')),
+      home_city TEXT NOT NULL DEFAULT '' CHECK (char_length(home_city) <= 100),
+      onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS dining_plan_time_options (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      plan_id UUID NOT NULL REFERENCES dining_plans(id) ON DELETE CASCADE,
+      proposed_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      scheduled_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(plan_id,scheduled_at)
+    );
+
+    CREATE TABLE IF NOT EXISTS dining_plan_time_votes (
+      plan_id UUID NOT NULL REFERENCES dining_plans(id) ON DELETE CASCADE,
+      option_id UUID NOT NULL REFERENCES dining_plan_time_options(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(plan_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS dining_plan_presence (
+      plan_id UUID NOT NULL REFERENCES dining_plans(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','otw','arrived')),
+      eta_minutes INTEGER CHECK (eta_minutes IS NULL OR eta_minutes BETWEEN 0 AND 1440),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(plan_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS split_bills (
+      plan_id UUID PRIMARY KEY REFERENCES dining_plans(id) ON DELETE CASCADE,
+      created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      subtotal INTEGER NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
+      extras INTEGER NOT NULL DEFAULT 0 CHECK (extras >= 0),
+      note TEXT NOT NULL DEFAULT '' CHECK (char_length(note) <= 240),
+      receipt_image TEXT NOT NULL DEFAULT '' CHECK (char_length(receipt_image) <= 7000000),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE split_bills ADD COLUMN IF NOT EXISTS receipt_image TEXT NOT NULL DEFAULT '' CHECK (char_length(receipt_image) <= 7000000);
+
+    CREATE TABLE IF NOT EXISTS split_bill_participants (
+      plan_id UUID NOT NULL REFERENCES split_bills(plan_id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      amount INTEGER NOT NULL DEFAULT 0 CHECK (amount >= 0),
+      paid BOOLEAN NOT NULL DEFAULT FALSE,
+      PRIMARY KEY(plan_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS hangout_wishlists (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT 'Tempat yang Harus Dicoba' CHECK (char_length(name) BETWEEN 1 AND 80),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS hangout_wishlist_members (
+      wishlist_id UUID NOT NULL REFERENCES hangout_wishlists(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'editor' CHECK (role IN ('editor','viewer')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(wishlist_id,user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS hangout_wishlist_restaurants (
+      wishlist_id UUID NOT NULL REFERENCES hangout_wishlists(id) ON DELETE CASCADE,
+      restaurant_id TEXT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+      added_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(wishlist_id,restaurant_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS product_events (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      event_name TEXT NOT NULL CHECK (char_length(event_name) BETWEEN 1 AND 80),
+      screen TEXT NOT NULL DEFAULT '' CHECK (char_length(screen) <= 80),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS stories (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -515,6 +607,12 @@ export async function migrateAndSeed() {
     CREATE INDEX IF NOT EXISTS restaurant_posts_restaurant_idx ON restaurant_posts(restaurant_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS smart_events_user_created_idx ON smart_events(user_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS smart_events_restaurant_idx ON smart_events(restaurant_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS hangout_preferences_availability_idx ON hangout_preferences(availability_status,availability_expires_at);
+    CREATE INDEX IF NOT EXISTS dining_plan_time_options_plan_idx ON dining_plan_time_options(plan_id,scheduled_at);
+    CREATE INDEX IF NOT EXISTS dining_plan_presence_plan_idx ON dining_plan_presence(plan_id,updated_at DESC);
+    CREATE INDEX IF NOT EXISTS wishlist_members_user_idx ON hangout_wishlist_members(user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS wishlist_restaurants_list_idx ON hangout_wishlist_restaurants(wishlist_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS product_events_user_created_idx ON product_events(user_id,created_at DESC);
   `);
 
   const values = [
