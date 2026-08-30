@@ -41,7 +41,7 @@ const hashToken = token => createHash("sha256").update(token).digest("hex");
 const exposeCodes = () => process.env.EXPOSE_AUTH_CODES === "true" || process.env.NODE_ENV !== "production";
 
 app.get("/health", async (_req,res,next) => {
-  try { await pool.query("SELECT 1"); res.json({ status:"ok",service:"fodd-api",version:"7.4" }); }
+  try { await pool.query("SELECT 1"); res.json({ status:"ok",service:"fodd-api",version:"7.5" }); }
   catch(e){ next(e); }
 });
 
@@ -889,4 +889,4 @@ app.use((error,_req,res,_next) => {
 });
 
 await migrateAndSeed();
-app.listen(port,"0.0.0.0",()=>console.log(`Fodd API v7.4 aktif pada port ${port}`));
+app.listen(port,"0.0.0.0",()=>console.log(`Fodd API v7.5 aktif pada port ${port}`));

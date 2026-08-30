@@ -1,6 +1,6 @@
-# Fodd API 7.4 — Social Stories
+# Fodd API 7.5 — Social Stories
 
-Backend Node.js + Express + PostgreSQL untuk Fodd 7.4.
+Backend Node.js + Express + PostgreSQL untuk Fodd 7.5.
 
 Health: `{"status":"ok","service":"fodd-api","version":"7.3"}`
 
